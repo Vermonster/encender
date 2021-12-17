@@ -78,7 +78,7 @@ describe('Basic Conversion Tests', async function() {
       .and.be.an.instanceOf(Error)
       .and.have.property('stack')
       .that.includes('Incoming Definition does not have a canonical URL');
-    
+
   });
 
   it('Should convert a minimal PlanDefinition into a CarePlan.', async function() {
@@ -87,7 +87,7 @@ describe('Basic Conversion Tests', async function() {
     const patientReference = 'Patient/1';
 
     const [CarePlan, RequestGroup] = await applyPlan(canonicalPlanDefinition, patientReference, resolver);
-    
+
     CarePlan.should.not.be.undefined;
     CarePlan.resourceType.should.equal('CarePlan');
     CarePlan.subject.should.deep.equal({
@@ -113,6 +113,66 @@ describe('Basic Conversion Tests', async function() {
     RequestGroup.status.should.equal('draft');
     RequestGroup.intent.should.equal('proposal');
 
+  });
+
+  it('Should convert a minimal PlanDefinition into a CarePlan (mergeNestedCarePlans).', async function() {
+    let resolver = simpleResolver('./test/fixtures/minimalResources.json');
+    const canonicalPlanDefinition = resolver('PlanDefinition/canonicalPlanDefinition')[0];
+    const patientReference = 'Patient/1';
+
+    const localSimpleCounter = {
+      getId() { return 1; }
+    }
+    const [CarePlan, RequestGroup] = await applyPlan(canonicalPlanDefinition, patientReference, resolver, localSimpleCounter, { mergeNestedCarePlans: true });
+
+    CarePlan.should.not.be.undefined;
+    CarePlan.resourceType.should.equal('CarePlan');
+    CarePlan.subject.should.deep.equal({
+      reference: 'Patient/1',
+      display: ''
+    });
+    CarePlan.instantiatesCanonical.should.equal('https://example-fhir-api.com/path/to/fhir/api/PlanDefinition/canonicalPlanDefinition');
+    CarePlan.status.should.equal('draft');
+    CarePlan.intent.should.equal('proposal');
+    CarePlan.activity.should.deep.equal([
+      {
+        reference: { reference: 'RequestGroup/' + RequestGroup.id }
+      }
+    ]);
+
+    RequestGroup.should.not.be.undefined;
+    RequestGroup.resourceType.should.equal('RequestGroup');
+    RequestGroup.subject.should.deep.equal({
+      reference: 'Patient/1',
+      display: ''
+    });
+    RequestGroup.instantiatesCanonical.should.equal('https://example-fhir-api.com/path/to/fhir/api/PlanDefinition/canonicalPlanDefinition');
+    RequestGroup.status.should.equal('draft');
+    RequestGroup.intent.should.equal('proposal');
+
+  });
+
+
+  it('Should convert a minimal PlanDefinition into a RequestGroup (requestGroupsOnly).', async function() {
+    let resolver = simpleResolver('./test/fixtures/minimalResources.json');
+    const canonicalPlanDefinition = resolver('PlanDefinition/canonicalPlanDefinition')[0];
+    const patientReference = 'Patient/1';
+
+    const localSimpleCounter = {
+      getId() { return 1; }
+    }
+
+    const [RequestGroup] = await applyPlan(canonicalPlanDefinition, patientReference, resolver, localSimpleCounter, { requestGroupsOnly: true });
+
+    RequestGroup.should.not.be.undefined;
+    RequestGroup.resourceType.should.equal('RequestGroup');
+    RequestGroup.subject.should.deep.equal({
+      reference: 'Patient/1',
+      display: ''
+    });
+    RequestGroup.instantiatesCanonical.should.equal('https://example-fhir-api.com/path/to/fhir/api/PlanDefinition/canonicalPlanDefinition');
+    RequestGroup.status.should.equal('draft');
+    RequestGroup.intent.should.equal('proposal');
   });
 
 });
@@ -224,14 +284,14 @@ describe('More Complex Conversion Tests', async function() {
         subject: { reference: 'Patient/1', display: '' },
         resourceType: 'ServiceRequest',
         status: 'option',
-        code: { 
+        code: {
           coding: [
             {
               system: 'http://snomed.info/sct',
               code: '260385009',
               display: 'Negative'
             }
-          ], 
+          ],
           text: "I'm nothing"
         }
       }
@@ -434,13 +494,13 @@ describe('CQL expression tests', async function() {
         subject: { reference: 'Patient/1', display: '' },
         resourceType: 'ServiceRequest',
         status: 'option',
-        code: { 
+        code: {
           coding: [{
             code: '10828004',
             display: 'Positive',
             system: 'http://snomed.info/sct'
-          }], 
-          text: 'I\'m something' 
+          }],
+          text: 'I\'m something'
         }
       }
     ]);

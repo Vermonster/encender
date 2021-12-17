@@ -17,10 +17,11 @@ export { simpleResolver } from './simpleResolver.js';
  * @param {String} patientReference - A reference to the Patient
  * @param {Function} resolver - For resolving references to FHIR resources
  * @param {Object} aux - Auxiliary resources and services
+ * @param {Object} params - Optional params for the apply operation, e.g. mergeNestedCarePlans, requestGroupsOnly
  * @returns {Object[]} Array of resources: CarePlan, RequestGroup, and otherResources
  */
-export async function applyPlan(planDefinition, patientReference=null, resolver=null, aux={}) {
-  /*---------------------------------------------------------------------------- 
+export async function applyPlan(planDefinition, patientReference=null, resolver=null, aux={}, params={}) {
+  /*----------------------------------------------------------------------------
     [Applying a PlanDefinition](https://www.hl7.org/fhir/plandefinition.html#12.18.3.3)
     1. Create a CarePlan resource focused on the Patient in context and linked to the PlanDefinition using the instantiates element
     2. Create goal elements in the CarePlan based on the goal definitions in the plan
@@ -36,7 +37,7 @@ export async function applyPlan(planDefinition, patientReference=null, resolver=
   const getId = aux?.getId ?? getIncrementalId;
 
   /*----------------------------------------------------------------------------
-  1. Create a CarePlan resource focused on the Patient in context and linked to 
+  1. Create a CarePlan resource focused on the Patient in context and linked to
   the PlanDefinition using the instantiates element
   ----------------------------------------------------------------------------*/
   let CarePlan = {
@@ -52,13 +53,13 @@ export async function applyPlan(planDefinition, patientReference=null, resolver=
   };
 
   /*----------------------------------------------------------------------------
-  2. Create goal elements in the CarePlan based on the goal definitions in the 
+  2. Create goal elements in the CarePlan based on the goal definitions in the
   plan
   ----------------------------------------------------------------------------*/
   // TODO: Create Goal resources and reference them in the CarePlan.goal element
 
   /*----------------------------------------------------------------------------
-  3. Create a RequestGroup resource focused on the Patient in context and linked 
+  3. Create a RequestGroup resource focused on the Patient in context and linked
   to the PlanDefinition using the instantiatesCanonical element
   ----------------------------------------------------------------------------*/
   let RequestGroup = {
@@ -88,7 +89,7 @@ export async function applyPlan(planDefinition, patientReference=null, resolver=
 
     let [setupExecution, sendPatientBundle, evaluateExpression] = initialzieCqlWorker(cqlWorker, true);
 
-    // Before processing each action, we need to check whether a library is being 
+    // Before processing each action, we need to check whether a library is being
     // referenced by this PlanDefinition.
     if (Array.isArray(planDefinition.library)) {
       const libRef = planDefinition.library[0];
@@ -120,7 +121,7 @@ export async function applyPlan(planDefinition, patientReference=null, resolver=
           throw new Error('Cannot resolve referenced Library: ' + libRef);
         }
       }
-      
+
       setupExecution(elmJson, valueSetJson, cqlParameters, elmJsonDependencies);
       // Define patient bundle
       var patientBundle = {
@@ -134,18 +135,27 @@ export async function applyPlan(planDefinition, patientReference=null, resolver=
 
     // If there are actions defined in this PlanDefinition, process them asynchronously
     if (planDefinition?.action) {
-      ({processedActions, otherResources} = await processActions(planDefinition.action, patientReference, resolver, aux, evaluateExpression));
+      ({processedActions, otherResources} = await processActions(planDefinition.action, patientReference, resolver, aux, evaluateExpression, params));
       RequestGroup.action = processedActions;
     }
   } finally {
     cqlWorker?.terminate();
   }
-  
-  return [
-    CarePlan,
-    RequestGroup,
-    ...otherResources
-  ];
+
+  const { requestGroupsOnly } = params;
+
+  if (requestGroupsOnly) {
+    return [
+      RequestGroup,
+      ...otherResources
+    ];
+  } else {
+    return [
+      CarePlan,
+      RequestGroup,
+      ...otherResources
+    ];
+  }
 
 }
 
@@ -205,9 +215,10 @@ function applyGuard(appliableResource, patientReference=null, resolver=null, aux
  * @param {String} patientReference - A reference to the Patient
  * @param {Function} resolver - For resolving references to FHIR resources
  * @param {Object} aux - Auxiliary resources and services
+ * @param {Object} params - Optional params for the apply operation, e.g. mergeNestedCarePlans, requestGroupsOnly
  * @returns {Object} Contains the applied actions as well as any generated resources
  */
-async function processActions(actions, patientReference, resolver, aux, evaluateExpression) {
+async function processActions(actions, patientReference, resolver, aux, evaluateExpression, params={}) {
   /*----------------------------------------------------------------------------
     [Applying a PlanDefinition](https://www.hl7.org/fhir/plandefinition.html#12.18.3.3)
     Processing for each action proceeds according to the following steps:
@@ -300,14 +311,20 @@ async function processActions(actions, patientReference, resolver, aux, evaluate
           // If this is a PlanDefinition, resolve it so we can apply it
           const planDefinition = resolver(def)[0];
           // NOTE: Recursive function call
-          let [CarePlan, RequestGroup, ...moreResources] = await applyPlan(planDefinition, patientReference, resolver, aux);
+          // let [CarePlan, RequestGroup, ...moreResources] = await applyPlan(planDefinition, patientReference, resolver, aux, params);
+          const applyResults = await applyPlan(planDefinition, patientReference, resolver, aux, params);
+          let targetResource = applyResults[0];
 
-          // Link the generated CarePlan's id via the resource element
-          applied.resource = 'CarePlan/' + CarePlan.id;
+          if (params.requestGroupsOnly || params.mergeNestedCarePlans) {
+            applied.resource = 'RequestGroup/' + targetResource.id;
+          } else {
+            // Link the generated CarePlan's id via the resource element
+            applied.resource = 'CarePlan/' + targetResource.id;
+          }
 
           // Set the status of the target resource to option
-          CarePlan.status = 'option';
-          
+          targetResource.status = 'option';
+
           // Apply any overrides based on the elements of the action such as title, description, and dynamicValue.
           // NOTE: Action takes precedence over PlanDefinition
           applied = pruneNull({
@@ -319,21 +336,20 @@ async function processActions(actions, patientReference, resolver, aux, evaluate
 
           if (act?.dynamicValue) {
             // Copy the values over to the target resource
-            CarePlan = evaluatedValues.reduce((acc, cv) => {
-              let path = transformChoicePaths('CarePlan', cv.path);
+            targetResource = evaluatedValues.reduce((acc, cv) => {
+              let path = transformChoicePaths(targetResource.resourceType, cv.path);
               let value = shouldTryToStringify(cv.path, cv.evaluated) ? JSON.stringify(cv.evaluated) : cv.evaluated;
               let append = expandPathAndValue(path, value);
               return {
                 ...acc,
                 ...append
               };
-            }, CarePlan);
+            }, targetResource);
           }
 
           // Bubble up the resources which were generated by this apply operation
-          otherResources.push(CarePlan);
-          otherResources.push(RequestGroup);
-          moreResources.forEach(mr => otherResources.push(mr));
+          otherResources.push(targetResource);
+          applyResults.slice(1).forEach(mr => otherResources.push(mr));
 
         } else if (/ActivityDefinition/.test(def)) {
           // If this is an ActivityDefinition, resolve it so we can apply it
@@ -427,7 +443,7 @@ function formatErrorMessage(errorOutput) {
  * @returns {Object} The requested resource
  */
  export async function applyActivity(activityDefinition, patientReference=null, resolver=null, aux={}) {
-  /*---------------------------------------------------------------------------- 
+  /*----------------------------------------------------------------------------
     [Applying an ActivityDefinition](https://www.hl7.org/fhir/activitydefinition.html#12.17.3.3)
     1. Create the target resource of the type specified by the kind element and focused on the Patient in context
     2. Set the status of the target resource to draft
@@ -454,7 +470,7 @@ function formatErrorMessage(errorOutput) {
       display: parseName(Patient?.name)
     }
   };
-  
+
   // https://www.hl7.org/fhir/valueset-request-resource-types.html
   const requestResourceTypes = [
     'Appointment',
@@ -528,15 +544,15 @@ function formatErrorMessage(errorOutput) {
       let [setupExecution, sendPatientBundle, evaluateExpression] = initialzieCqlWorker(cqlWorker, true);
       if (Array.isArray(activityDefinition.library)) {
         const libRef = activityDefinition.library[0];
-  
+
         // Check aux for objects necessary for CQL execution
         let elmJsonDependencies = aux.elmJsonDependencies ?? [];
         const valueSetJson = aux.valueSetJson ?? {};
         const cqlParameters = aux.cqlParameters ?? {};
-  
+
         const elmJsonKey = Object.keys(elmJsonDependencies).filter(e => libRef.includes(e))[0];
         let elmJson = elmJsonDependencies[elmJsonKey];
-  
+
         if (!elmJson) {
           const resolvedLibraries = resolver(libRef);
           if (Array.isArray(resolvedLibraries) && resolvedLibraries.length > 0) {
