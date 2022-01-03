@@ -266,9 +266,11 @@ async function processActions(actions, patientReference, resolver, aux, evaluate
 
     // 5.1. Evaluate applicability conditions
     let applyThisCondition = true;
-    if (act?.condition) {
+    const applicabilityConditions = act?.condition?.filter(c => c.kind === 'applicability');
+
+    if (applicabilityConditions) {
       // TODO: Check that these are applicability conditions
-      const evaluatedConditions = await Promise.all(act.condition.map(async (c) => {
+      const evaluatedConditions = await Promise.all(applicabilityConditions.map(async (c) => {
         if (c?.expression?.language != 'text/cql') {
           throw new Error('Action condition specifies an unsupported expression language');
         }
