@@ -271,6 +271,10 @@ async function processActions(actions, patientReference, resolver, aux, evaluate
     if (applicabilityConditions) {
       // TODO: Check that these are applicability conditions
       const evaluatedConditions = await Promise.all(applicabilityConditions.map(async (c) => {
+        // Need to deal with:
+        // 1. text/cql (or perhaps it is simpler to inline with text/fhirpath)
+        // 2. text/cql-expression, and
+        // 3. text/cql-identifier.
         if (c?.expression?.language != 'text/cql') {
           throw new Error('Action condition specifies an unsupported expression language');
         }
@@ -297,6 +301,10 @@ async function processActions(actions, patientReference, resolver, aux, evaluate
         if (act?.dynamicValue) {
           // Asynchronously evaluate all dynamicValues
           evaluatedValues = await Promise.all(act.dynamicValue.map(async (dV) => {
+            // Need to deal with:
+            // 1. text/cql (or perhaps it is simpler to inline with text/fhirpath)
+            // 2. text/cql-expression, and
+            // 3. text/cql-identifier.
             if (dV?.expression?.language != 'text/cql') {
               throw new Error('Dynamic value specifies an unsupported expression language');
             }
