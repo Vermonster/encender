@@ -314,7 +314,12 @@ async function processActions(actions, patientReference, resolver, aux, evaluate
           const planDefinition = resolver(def)[0];
           // NOTE: Recursive function call
           // let [CarePlan, RequestGroup, ...moreResources] = await applyPlan(planDefinition, patientReference, resolver, aux, params);
-          const applyResults = await applyPlan(planDefinition, patientReference, resolver, aux, params);
+
+          const newParams = { ...params };
+          if (params.mergeNestedCarePlans) {
+            newParams.requestGroupsOnly = true;
+          }
+          const applyResults = await applyPlan(planDefinition, patientReference, resolver, aux, newParams);
           let targetResource = applyResults[0];
 
           if (params.requestGroupsOnly || params.mergeNestedCarePlans) {
