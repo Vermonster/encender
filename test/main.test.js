@@ -556,7 +556,11 @@ describe('Questionnaire when directly defined', () => {
     const withQuestionnaire = resolver('PlanDefinition/withDirectQuestionnaire')[0];
     const patientReference = 'Patient/1';
 
-    const [_CarePlan, RequestGroup, ..._otherResources] = await applyPlan(withQuestionnaire, patientReference, resolver);
+    const [_CarePlan, RequestGroup, ...otherResources] = await applyPlan(withQuestionnaire, patientReference, resolver);
+
+    const questionnaire = otherResources.filter(r => r.resourceType === 'Questionnaire');
+    questionnaire.should.not.be.undefined;
+    questionnaire.length.should.equal(1);
 
     RequestGroup.action.should.deep.equal([
       {
@@ -564,5 +568,48 @@ describe('Questionnaire when directly defined', () => {
         resource: "Questionnaire/simpleQuestionnaire"
       }
     ]);
+  });
+
+  it('returns a task to collect information', async() => {
+    let resolver = simpleResolver('./test/fixtures/withQuestionnaire.json');
+    const withQuestionnaire = resolver('PlanDefinition/withQuestionnaireCollectionTask')[0];
+    const patientReference = 'Patient/1';
+
+    const [_CarePlan, RequestGroup, ...otherResources] = await applyPlan(withQuestionnaire, patientReference, resolver);
+
+    RequestGroup.action.should.deep.equal([
+      {
+        id: '66',
+        resource: "Task/67"
+      }
+    ]);
+
+    const questionnaire = otherResources.filter(r => r.resourceType === 'Questionnaire');
+    questionnaire.should.not.be.undefined;
+    questionnaire.length.should.equal(1);
+
+    const task = otherResources.find(r => r.resourceType === 'Task');
+
+    task.should.deep.equal({
+      id: '67',
+      subject: { reference: 'Patient/1', display: '' },
+      resourceType: 'Task',
+      status: 'option',
+      doNotPerform: false,
+      input : [
+        {
+          type : {
+            coding : [
+              {
+                system : "http://hl7.org/fhir/uv/cpg/CodeSystem/cpg-activity-type",
+                code : "collect-information",
+                display : "Collect information"
+              }
+            ]
+          },
+          valueCanonical : "http://example.org/Questionnaire/simpleQuestionnaire"
+        }
+      ]
+    })
   })
 });

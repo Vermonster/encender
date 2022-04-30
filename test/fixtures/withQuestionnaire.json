@@ -4,6 +4,21 @@
     "id": "1"
   },
   {
+    "resourceType": "ActivityDefinition",
+    "id": "collectSimpleQuestionnaire",
+    "name": "collectSimpleQuestionnaire",
+    "status": "draft",
+    "url" : "http://example.org/ActivityDefinition/collectSimpleQuestionnaire",
+    "doNotPerform" : false,
+    "extension": [
+      {
+        "url": "http://hl7.org/fhir/uv/cpg/StructureDefinition/cpg-collectWith",
+        "valueCanonical": "http://example.org/Questionnaire/simpleQuestionnaire"
+      }
+    ],
+    "kind" : "Task"
+  },
+  {
     "resourceType": "Questionnaire",
     "id": "simpleQuestionnaire",
     "name": "simpleQuestionnaire",
@@ -26,6 +41,18 @@
     "action": [
       {
         "definitionCanonical": "http://example.org/Questionnaire/simpleQuestionnaire"
+      }
+    ]
+  },
+  {
+    "resourceType": "PlanDefinition",
+    "id": "withQuestionnaireCollectionTask",
+    "name": "withQuestionnaireCollectionTask",
+    "status": "draft",
+    "url": "http://example.org/PlanDefinition/withQuestionnaireCollectionTask",
+    "action": [
+      {
+        "definitionCanonical": "http://example.org/ActivityDefinition/collectSimpleQuestionnaire"
       }
     ]
   }
