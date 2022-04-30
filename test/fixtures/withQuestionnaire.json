@@ -1,0 +1,32 @@
+[
+  {
+    "resourceType": "Patient",
+    "id": "1"
+  },
+  {
+    "resourceType": "Questionnaire",
+    "id": "simpleQuestionnaire",
+    "name": "simpleQuestionnaire",
+    "status": "draft",
+    "url": "http://example.org/Questionnaire/simpleQuestionnaire",
+    "item": [
+      {
+        "linkId": "1",
+        "text": "A question for you",
+        "type": "text"
+      }
+    ]
+  },
+  {
+    "resourceType": "PlanDefinition",
+    "id": "withDirectQuestionnaire",
+    "name": "withDirectQuestionnaire",
+    "status": "draft",
+    "url": "http://example.org/PlanDefinition/withDirectQuestionnaire",
+    "action": [
+      {
+        "definitionCanonical": "http://example.org/Questionnaire/simpleQuestionnaire"
+      }
+    ]
+  }
+]

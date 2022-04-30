@@ -172,7 +172,8 @@ function applyGuard(appliableResource, patientReference=null, resolver=null, aux
   // Validate inputs
   const appliableResourceTypes = [
     'PlanDefinition',
-    'ActivityDefinition'
+    'ActivityDefinition',
+    'Questionnaire'
   ];
   if (appliableResourceTypes.includes(appliableResource?.resourceType) == false) {
     let errMsg = 'One of the following resources must be provided';
@@ -403,8 +404,8 @@ async function processActions(actions, patientReference, resolver, aux, evaluate
           otherResources.push(targetResource);
 
         } else if (/Questionnaire/.test(def)) {
-          // TODO: Process Questionnaires
-
+          const questionnaire = resolver(def)[0];
+          applied.resource = `Questionnaire/${questionnaire.id}`
         }
 
       } else if (act?.action) {

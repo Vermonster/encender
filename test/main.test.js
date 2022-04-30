@@ -548,5 +548,21 @@ describe('CQL expression tests', async function() {
   });
 
   // TODO: Metadata and precedence rules
+});
 
+describe('Questionnaire when directly defined', () => {
+  it('returns a questionnaire as the resource in the request group', async () => {
+    let resolver = simpleResolver('./test/fixtures/withQuestionnaire.json');
+    const withQuestionnaire = resolver('PlanDefinition/withDirectQuestionnaire')[0];
+    const patientReference = 'Patient/1';
+
+    const [_CarePlan, RequestGroup, ..._otherResources] = await applyPlan(withQuestionnaire, patientReference, resolver);
+
+    RequestGroup.action.should.deep.equal([
+      {
+        id: '63',
+        resource: "Questionnaire/simpleQuestionnaire"
+      }
+    ]);
+  })
 });
