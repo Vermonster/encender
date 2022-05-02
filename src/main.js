@@ -424,6 +424,9 @@ async function processActions(actions, patientReference, resolver, aux, evaluate
 
           // Probably should do this in applyActivity... Add any canonicals a created task may refer to:
           if (targetResource.resourceType === 'Task') {
+            if (targetResource.input === undefined) {
+              targetResource.input = [];
+            }
             targetResource.input.forEach(i => {
               const taskInput = resolver(i.valueCanonical)[0]
               if (taskInput !== undefined) {
