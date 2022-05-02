@@ -612,4 +612,43 @@ describe('Questionnaire when directly defined', () => {
       ]
     })
   })
+
+  it("creates a Questionnaire based on data-requirements", async () => {
+    let resolver = simpleResolver('./test/fixtures/withQuestionnaire.json');
+    const withQuestionnaire = resolver('PlanDefinition/withQuestionnaireFromInput')[0];
+    const patientReference = 'Patient/1';
+
+    const [_CarePlan, RequestGroup, ...otherResources] = await applyPlan(withQuestionnaire, patientReference, resolver);
+
+    const questionnaireExtension = RequestGroup.extension.find(e => e.url.endsWith("supporting-questionnaire"));
+    questionnaireExtension.valueCanonical.should.not.be.undefined;
+
+    const questionnaires = otherResources.filter(r => r.resourceType === 'Questionnaire');
+    questionnaires.should.not.be.undefined;
+    questionnaires.length.should.equal(1);
+
+    questionnaires[0].item.should.deep.equal([
+      {
+        linkId: "71",
+        text: "Creatinine Clearance (CrCl)",
+        extension: [
+          {
+            url: "http://hl7.org/fhir/StructureDefinition/questionnaire-unitOption",
+            valueCoding: {
+              system: "http://snomed.info/sct",
+              code: "umol/L",
+              display: "μmol/L"
+            }
+          }
+        ],
+        code: [
+          {
+            system: "http://loinc.org",
+            code: "39802-4"
+          }
+        ],
+        type: "quantity"
+      }
+    ]);
+  });
 });

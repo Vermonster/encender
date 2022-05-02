@@ -82,6 +82,7 @@ export async function applyPlan(planDefinition, patientReference=null, resolver=
   ----------------------------------------------------------------------------*/
   let processedActions = []; // Array to hold processed actions
   let otherResources = []; // Any resources created as part of action processing
+  let dynamicQuestionnaireItems = []; // Array to hold dynamic questionnaire items
 
   // Setup the CQL Worker and process the actions
   let cqlWorker = new Worker(require.resolve('cql-worker/src/cql-worker-thread.js'));
@@ -135,8 +136,23 @@ export async function applyPlan(planDefinition, patientReference=null, resolver=
 
     // If there are actions defined in this PlanDefinition, process them asynchronously
     if (planDefinition?.action) {
-      ({processedActions, otherResources} = await processActions(planDefinition.action, patientReference, resolver, aux, evaluateExpression, params));
+      ({ processedActions, otherResources, dynamicQuestionnaireItems } = await processActions(planDefinition.action, patientReference, resolver, aux, evaluateExpression, params));
       RequestGroup.action = processedActions;
+
+      // NEW -- support dynamic questionnaire
+      if (dynamicQuestionnaireItems.length) {
+        const dynamicQuestionnaire = buildDynamicQuestionnaire(dynamicQuestionnaireItems);
+
+        otherResources.push(dynamicQuestionnaire);
+        if (RequestGroup.extension === undefined) {
+          RequestGroup.extension = [];
+        }
+        RequestGroup.extension.push({
+          url: 'supporting-questionnaire',
+          valueCanonical: dynamicQuestionnaire.url
+        });
+      }
+
     }
   } finally {
     cqlWorker?.terminate();
@@ -250,6 +266,7 @@ async function processActions(actions, patientReference, resolver, aux, evaluate
   // These are our two main outputs
   let processedActions = [];
   let otherResources = []; // Any resources created as part of action processing
+  let dynamicQuestionnaireItems = []; // NEW - dynamic questionnaire items
 
   // Loop over the actions
   await Promise.all(actions.map(async (act) => {
@@ -292,6 +309,8 @@ async function processActions(actions, patientReference, resolver, aux, evaluate
     }
 
     if (applyThisCondition) {
+      // NEW -- add dynamic QR items...
+      dynamicQuestionnaireItems = buildDynamicQuestionnaireItems(act, resolver);
 
       // 5.2. Determine if action is a group or atomic
       const def = act?.definitionCanonical;
@@ -423,12 +442,16 @@ async function processActions(actions, patientReference, resolver, aux, evaluate
         // 5.4. If there are sub-actions then we assume this is a group
 
         // NOTE: Recursive function call
-        const {processedActions: subActions, otherResources: moreResources} = await
-          processActions(act.action, patientReference, resolver, aux, evaluateExpression);
+        const {
+          processedActions: subActions,
+          otherResources: moreResources,
+          dynamicQuestionnaireItems: moreQuestionnaireItems
+        } = await processActions(act.action, patientReference, resolver, aux, evaluateExpression);
 
         // Bubble up the sub-actions and any resources which were created by processing them
         applied.action = subActions;
         moreResources.forEach(mr => otherResources.push(mr));
+        moreQuestionnaireItems.forEach(qi => dynamicQuestionnaireItems.push(qi));
 
       } else {
         // Don't have a definition and don't have sub-actions
@@ -443,7 +466,8 @@ async function processActions(actions, patientReference, resolver, aux, evaluate
 
   return {
     processedActions: processedActions,
-    otherResources: otherResources // Any resources created as part of action processing
+    otherResources: otherResources, // Any resources created as part of action processing
+    dynamicQuestionnaireItems
   };
 }
 
@@ -654,4 +678,82 @@ function formatErrorMessage(errorOutput) {
 
   return targetResource;
 
+}
+
+
+// Added support here for dynamic questionnaire generation
+
+/**
+  * Specific implementation to handle Observation-based case-feature definitions
+  */
+function convertObservationDataRequirementToQuestionnaireItem(observationDataRequirement, resolver) {
+  const profile = resolver(observationDataRequirement?.profile)?.[0];
+  if (profile !== undefined) {
+    // The question is the title of the profile...
+    const text = profile.title;
+
+    // if there is a coding, add
+    const code = profile.differential.element.find(e => e.path === 'Observation.code')?.patternCodeableConcept?.coding;
+
+    // determine the type (TODO: WIP approach, handle exhaustive cases)
+    const type = profile.differential.element.find(e => e.path === 'Observation.value[x]')?.type?.[0]?.code?.toLowerCase();
+
+    // if there are unitOptions
+    const unitUnit = profile.differential.element.find(e => e.path === 'Observation.valueQuantity.unit')?.patternString;
+    const unitCode = profile.differential.element.find(e => e.path === 'Observation.valueQuantity.code')?.patternCode;
+    const unitSystem = profile.differential.element.find(e => e.path === 'Observation.valueQuantity.system')?.patternUri;
+
+    let extension;
+
+    if (unitUnit) {
+      extension = [
+        {
+          url: "http://hl7.org/fhir/StructureDefinition/questionnaire-unitOption",
+          valueCoding: {
+            system: unitSystem,
+            code: unitCode,
+            display: unitUnit
+          }
+        }
+      ];
+    }
+
+    return {
+      linkId: getIncrementalId(),
+      text,
+      code,
+      type,
+      extension
+    }
+  } else {
+    throw new Error('Data requirement requires a profile, unable to find: ' + dataRequirement.profile);
+  }
+}
+
+function convertDataRequirementToQuestionnaireItem(dataRequirement, resolver) {
+  if (dataRequirement.type === 'Observation') {
+    return convertObservationDataRequirementToQuestionnaireItem(dataRequirement, resolver);
+  } else {
+    throw new Error('Currently only support Observation-based dataRequirements.');
+  }
+}
+
+function buildDynamicQuestionnaireItems(action, resolver) {
+  return action.input?.flatMap(i => {
+    if (i.extension?.find(e => e.url.endsWith('questionnaire-extractable'))?.valueBoolean) {
+      return action.input.map(i => convertDataRequirementToQuestionnaireItem(i, resolver));
+    }
+  }) || [];
+}
+
+function buildDynamicQuestionnaire(item) {
+  if (item?.length) {
+    const id = getIncrementalId();
+    return {
+      resourceType: 'Questionnaire',
+      id,
+      url: `urn:example:questionnaire:${id}`,
+      item
+    };
+  }
 }
